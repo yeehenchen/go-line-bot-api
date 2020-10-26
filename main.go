@@ -1,11 +1,16 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/line/line-bot-sdk-go/linebot"
+	"github.com/tidwall/gjson"
 )
 
 var bot *linebot.Client
@@ -40,8 +45,17 @@ func requestHandler(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					log.Println("Quota err:", err)
 				}
-				if _, err = bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage(message.Text+" OK!")).Do(); err != nil {
-					log.Print(err)
+				text := message.Text
+				if strings.HasPrefix(text, "!IG ") {
+					igAccount := strings.TrimPrefix(text, "!IG ")
+					imgURL := findIgImg(igAccount)
+					if _, err = bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage(imgURL)).Do(); err != nil {
+						log.Print(err)
+					}
+				} else {
+					if _, err = bot.ReplyMessage(event.ReplyToken, linebot.NewTextMessage(text+" OK!")).Do(); err != nil {
+						log.Print(err)
+					}
 				}
 			}
 		}
@@ -56,4 +70,27 @@ func getPort() string {
 	}
 
 	return ":" + port
+}
+
+func findIgImg(t string) string {
+	resp, err := http.Get("https://instagram.com/" + t + "/?__a=1")
+	if err != nil {
+		// handle error
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "no response body is found!"
+	}
+	log.Print(string(body))
+	pics := gjson.GetBytes(body, "graphql.user.edge_owner_to_timeline_media.edges.#.node.shortcode").Array()
+	log.Print(pics)
+	var randIndex int
+	if len := len(pics); len > 0 {
+		rand.Seed(time.Now().UnixNano())
+		randIndex = rand.Intn(len)
+	} else {
+		return "no post found!"
+	}
+	return "https://instagram.com/" + t + "/p/" + pics[randIndex].String() + "/"
 }
